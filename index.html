@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Vision pre-compensation (demo)</title>
+  <style>
+    :root {
+      --bg: #0f1114;
+      --panel: #1a1d23;
+      --text: #e8eaed;
+      --muted: #9aa0a6;
+      --accent: #8ab4f8;
+      --border: #2d323c;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      font-size: 15px;
+      line-height: 1.45;
+      -webkit-tap-highlight-color: transparent;
+    }
+    header {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+    }
+    header h1 {
+      margin: 0;
+      font-size: 1.05rem;
+      font-weight: 600;
+    }
+    header p {
+      margin: 0.35rem 0 0;
+      font-size: 0.8rem;
+      color: var(--muted);
+      max-width: 42rem;
+    }
+    main {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      padding: 0.75rem;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    .chart-wrap {
+      position: relative;
+      width: 100%;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: #fff;
+    }
+    #chart {
+      display: block;
+      width: 100%;
+      height: auto;
+      vertical-align: middle;
+      touch-action: manipulation;
+    }
+    .controls {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+    }
+    .controls h2 {
+      margin: 0 0 0.5rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 0.5rem 0.75rem;
+      align-items: center;
+      margin-bottom: 0.65rem;
+    }
+    .row:last-child { margin-bottom: 0; }
+    .row label {
+      font-size: 0.9rem;
+    }
+    .row .val {
+      font-variant-numeric: tabular-nums;
+      color: var(--accent);
+      min-width: 5.5rem;
+      text-align: right;
+      font-size: 0.85rem;
+    }
+    input[type="range"] {
+      grid-column: 1 / -1;
+      width: 100%;
+      accent-color: var(--accent);
+    }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 0.75rem;
+    }
+    button {
+      background: #2d3a4f;
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 0.45rem 0.85rem;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+    button:active { transform: scale(0.98); }
+    .footnote {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-top: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Screen pre-distortion demo</h1>
+    <p>
+      Hold the phone at the distance you set. Adjust sliders until the chart looks sharp to your naked eye.
+      This is a rough optical toy, not a clinical prescription.
+    </p>
+  </header>
+  <main>
+    <div class="chart-wrap">
+      <canvas id="chart" width="800" height="520" aria-label="Snellen-style chart"></canvas>
+    </div>
+    <section class="controls" aria-label="Tuning parameters">
+      <h2>Parameters</h2>
+      <div class="row">
+        <label for="sphere">Sphere (defocus strength, D scale)</label>
+        <span class="val" id="sphereVal">0.00</span>
+        <input type="range" id="sphere" min="-800" max="800" value="0" step="5" />
+      </div>
+      <div class="row">
+        <label for="cylinder">Cylinder (astigmatism, D scale)</label>
+        <span class="val" id="cylinderVal">0.00</span>
+        <input type="range" id="cylinder" min="0" max="600" value="0" step="5" />
+      </div>
+      <div class="row">
+        <label for="axis">Axis (degrees)</label>
+        <span class="val" id="axisVal">90°</span>
+        <input type="range" id="axis" min="0" max="179" value="90" step="1" />
+      </div>
+      <div class="row">
+        <label for="distance">Viewing distance (cm)</label>
+        <span class="val" id="distanceVal">40</span>
+        <input type="range" id="distance" min="20" max="600" value="40" step="1" />
+      </div>
+      <div class="row">
+        <label for="pupil">Pupil diameter (mm)</label>
+        <span class="val" id="pupilVal">3.5</span>
+        <input type="range" id="pupil" min="20" max="80" value="35" step="1" />
+      </div>
+      <div class="row">
+        <label for="nsr">Wiener noise floor (stability)</label>
+        <span class="val" id="nsrVal">0.02</span>
+        <input type="range" id="nsr" min="1" max="80" value="20" step="1" />
+      </div>
+      <div class="actions">
+        <button type="button" id="reset">Reset sliders</button>
+        <button type="button" id="toggleRaw">Show raw chart</button>
+      </div>
+      <p class="footnote">
+        Larger pupil and farther distance increase the modeled blur disk, so other sliders often need retuning.
+        If the image rings or explodes, raise the noise floor.
+      </p>
+    </section>
+  </main>
+  <script>
+(function () {
+  "use strict";
+
+  const canvas = document.getElementById("chart");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+
+  const ROWS = 9;
+  const ROW_TEXT = [
+    "E",
+    "F P",
+    "T O Z",
+    "L P E D",
+    "P E C F D",
+    "E D F C Z P",
+    "F E L O P Z D",
+    "D E F P O T E C",
+    "L E F O D P C T",
+  ];
+
+  let rawRGBA = null;
+  let procW = 0;
+  let procH = 0;
+  let showRaw = false;
+  let processTimer = null;
+
+  function layoutCanvas() {
+    const wrap = canvas.parentElement;
+    const cssW = Math.min(900, Math.max(280, wrap.clientWidth - 0));
+    const dpr = Math.min(2.5, window.devicePixelRatio || 1);
+    const aspect = 800 / 520;
+    const w = Math.max(400, Math.round(cssW * dpr));
+    const h = Math.round(w / aspect);
+    canvas.style.width = cssW + "px";
+    canvas.style.height = Math.round(cssW / aspect) + "px";
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+      return true;
+    }
+    return false;
+  }
+
+  function drawSharpChart() {
+    layoutCanvas();
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, w, h);
+    const margin = w * 0.06;
+    const top = h * 0.08;
+    const rowH = (h - top - margin) / ROWS;
+
+    ctx.fillStyle = "#111111";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    for (let r = 0; r < ROWS; r++) {
+      const text = ROW_TEXT[r];
+      const fontPx = rowH * 0.72 * Math.pow(0.88, r);
+      ctx.font = "bold " + fontPx + "px Arial, Helvetica, sans-serif";
+      const y = top + rowH * (r + 0.5);
+      ctx.fillText(text, w / 2, y);
+    }
+
+    const id = ctx.getImageData(0, 0, w, h);
+    rawRGBA = id.data;
+    procW = w;
+    procH = h;
+  }
+
+  function nextPow2(n) {
+    let p = 1;
+    while (p < n) p <<= 1;
+    return p;
+  }
+
+  function fftComplex(re, im) {
+    const n = re.length;
+    let j = 0;
+    for (let i = 1; i < n; i++) {
+      let bit = n >>> 1;
+      for (; j & bit; bit >>>= 1) j ^= bit;
+      j ^= bit;
+      if (i < j) {
+        let tr = re[i]; re[i] = re[j]; re[j] = tr;
+        let ti = im[i]; im[i] = im[j]; im[j] = ti;
+      }
+    }
+    for (let len = 2; len <= n; len <<= 1) {
+      const half = len >>> 1;
+      const ang = (-2 * Math.PI) / len;
+      const wlenRe = Math.cos(ang);
+      const wlenIm = Math.sin(ang);
+      for (let i = 0; i < n; i += len) {
+        let wre = 1;
+        let wim = 0;
+        for (let k = 0; k < half; k++) {
+          const idx = i + k + half;
+          const tre = wre * re[idx] - wim * im[idx];
+          const tim = wre * im[idx] + wim * re[idx];
+          const ure = re[i + k];
+          const uim = im[i + k];
+          re[idx] = ure - tre;
+          im[idx] = uim - tim;
+          re[i + k] = ure + tre;
+          im[i + k] = uim + tim;
+          const nwre = wre * wlenRe - wim * wlenIm;
+          const nwim = wre * wlenIm + wim * wlenRe;
+          wre = nwre;
+          wim = nwim;
+        }
+      }
+    }
+  }
+
+  function ifftComplex(re, im) {
+    const n = re.length;
+    for (let i = 0; i < n; i++) im[i] = -im[i];
+    fftComplex(re, im);
+    for (let i = 0; i < n; i++) {
+      re[i] /= n;
+      im[i] = -im[i] / n;
+    }
+  }
+
+  function fft2d(re, im, w, h) {
+    const rowRe = new Float32Array(w);
+    const rowIm = new Float32Array(w);
+    for (let y = 0; y < h; y++) {
+      const o = y * w;
+      for (let x = 0; x < w; x++) {
+        rowRe[x] = re[o + x];
+        rowIm[x] = im[o + x];
+      }
+      fftComplex(rowRe, rowIm);
+      for (let x = 0; x < w; x++) {
+        re[o + x] = rowRe[x];
+        im[o + x] = rowIm[x];
+      }
+    }
+    const colRe = new Float32Array(h);
+    const colIm = new Float32Array(h);
+    for (let x = 0; x < w; x++) {
+      for (let y = 0; y < h; y++) {
+        colRe[y] = re[y * w + x];
+        colIm[y] = im[y * w + x];
+      }
+      fftComplex(colRe, colIm);
+      for (let y = 0; y < h; y++) {
+        re[y * w + x] = colRe[y];
+        im[y * w + x] = colIm[y];
+      }
+    }
+  }
+
+  function ifft2d(re, im, w, h) {
+    const rowRe = new Float32Array(w);
+    const rowIm = new Float32Array(w);
+    for (let y = 0; y < h; y++) {
+      const o = y * w;
+      for (let x = 0; x < w; x++) {
+        rowRe[x] = re[o + x];
+        rowIm[x] = im[o + x];
+      }
+      ifftComplex(rowRe, rowIm);
+      for (let x = 0; x < w; x++) {
+        re[o + x] = rowRe[x];
+        im[o + x] = rowIm[x];
+      }
+    }
+    const colRe = new Float32Array(h);
+    const colIm = new Float32Array(h);
+    for (let x = 0; x < w; x++) {
+      for (let y = 0; y < h; y++) {
+        colRe[y] = re[y * w + x];
+        colIm[y] = im[y * w + x];
+      }
+      ifftComplex(colRe, colIm);
+      for (let y = 0; y < h; y++) {
+        re[y * w + x] = colRe[y];
+        im[y * w + x] = colIm[y];
+      }
+    }
+  }
+
+  /**
+   * Map prescription-like sliders + distance + pupil to major/minor blur sigmas (pixels)
+   * on the display plane. This is a coarse geometric scaling, not clinical accuracy.
+   */
+  function sigmasFromParams(sphereD, cylD, axisDeg, distCm, pupilMm) {
+    const distRef = 40;
+    const pupilRef = 3.5;
+    const scale = (pupilMm / pupilRef) * (distRef / distCm);
+    const s = Math.abs(sphereD) * 0.55 + 0.35;
+    const c = cylD * 0.55;
+    const sigmaMaj = Math.max(0.15, (s + c) * scale);
+    const sigmaMin = Math.max(0.15, (s) * scale);
+    return { sigmaMaj, sigmaMin, axisRad: (axisDeg * Math.PI) / 180 };
+  }
+
+  function fillEllipticalGaussian2D(buf, w, h, sigmaMaj, sigmaMin, axisRad) {
+    buf.fill(0);
+    const cx = (w - 1) / 2;
+    const cy = (h - 1) / 2;
+    const c = Math.cos(axisRad);
+    const s = Math.sin(axisRad);
+    const inv2maj = 1 / (2 * sigmaMaj * sigmaMaj);
+    const inv2min = 1 / (2 * sigmaMin * sigmaMin);
+    let sum = 0;
+    const rad = Math.min(w, h) / 2;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const dx = x - cx;
+        const dy = y - cy;
+        if (dx * dx + dy * dy > rad * rad) continue;
+        const xr = dx * c + dy * s;
+        const yr = -dx * s + dy * c;
+        const g = Math.exp(-(xr * xr * inv2maj + yr * yr * inv2min));
+        buf[y * w + x] = g;
+        sum += g;
+      }
+    }
+    if (sum > 0) {
+      for (let i = 0; i < buf.length; i++) buf[i] /= sum;
+    } else {
+      buf[cy * w + cx] = 1;
+    }
+  }
+
+  /** Circular shift so PSF peak sits at index (0,0) for cyclic convolution via FFT. */
+  function ifftshift2dInPlace(buf, w, h, tmp) {
+    const sh = Math.floor(h / 2);
+    const sw = Math.floor(w / 2);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const sy = (y + sh) % h;
+        const sx = (x + sw) % w;
+        tmp[y * w + x] = buf[sy * w + sx];
+      }
+    }
+    buf.set(tmp);
+  }
+
+  function wienerDeconvGrayscale(sourceRGBA, sw, sh, padW, padH, psfPad, nsr) {
+    const n = padW * padH;
+    const re = new Float32Array(n);
+    const im = new Float32Array(n);
+    const hRe = new Float32Array(n);
+    const hIm = new Float32Array(n);
+
+    for (let y = 0; y < padH; y++) {
+      for (let x = 0; x < padW; x++) {
+        let v = 1;
+        if (x < sw && y < sh) {
+          const i = (y * sw + x) * 4;
+          v = sourceRGBA[i] / 255;
+        }
+        re[y * padW + x] = v;
+      }
+    }
+
+    fft2d(re, im, padW, padH);
+
+    for (let i = 0; i < n; i++) {
+      hRe[i] = psfPad[i];
+      hIm[i] = 0;
+    }
+    fft2d(hRe, hIm, padW, padH);
+
+    for (let i = 0; i < n; i++) {
+      const hr = hRe[i];
+      const hi = hIm[i];
+      const denom = hr * hr + hi * hi + nsr;
+      const numr = hr * re[i] + hi * im[i];
+      const numi = hr * im[i] - hi * re[i];
+      re[i] = numr / denom;
+      im[i] = numi / denom;
+    }
+
+    ifft2d(re, im, padW, padH);
+
+    const out = new Uint8ClampedArray(sw * sh * 4);
+    for (let y = 0; y < sh; y++) {
+      for (let x = 0; x < sw; x++) {
+        const idx = y * padW + x;
+        let v = re[idx];
+        if (v < 0) v = 0;
+        if (v > 1) v = 1;
+        const j = (y * sw + x) * 4;
+        const b = Math.round(v * 255);
+        out[j] = b;
+        out[j + 1] = b;
+        out[j + 2] = b;
+        out[j + 3] = 255;
+      }
+    }
+    return out;
+  }
+
+  let psfBuf = new Float32Array(1);
+  let psfTmp = new Float32Array(1);
+
+  function processFrame() {
+    if (!rawRGBA || showRaw) {
+      if (rawRGBA) {
+        ctx.putImageData(new ImageData(new Uint8ClampedArray(rawRGBA), procW, procH), 0, 0);
+      }
+      return;
+    }
+
+    const sphereD = parseInt(document.getElementById("sphere").value, 10) / 100;
+    const cylD = parseInt(document.getElementById("cylinder").value, 10) / 100;
+    const axisDeg = parseInt(document.getElementById("axis").value, 10);
+    const distCm = parseInt(document.getElementById("distance").value, 10);
+    const pupilMm = parseInt(document.getElementById("pupil").value, 10) / 10;
+    const nsr = parseInt(document.getElementById("nsr").value, 10) / 1000;
+
+    const { sigmaMaj, sigmaMin, axisRad } = sigmasFromParams(
+      sphereD,
+      cylD,
+      axisDeg,
+      distCm,
+      pupilMm
+    );
+
+    const sw = procW;
+    const sh = procH;
+    const padW = nextPow2(sw);
+    const padH = nextPow2(sh);
+    const n = padW * padH;
+
+    if (psfBuf.length !== n) {
+      psfBuf = new Float32Array(n);
+      psfTmp = new Float32Array(n);
+    }
+
+    fillEllipticalGaussian2D(psfBuf, padW, padH, sigmaMaj, sigmaMin, axisRad);
+    ifftshift2dInPlace(psfBuf, padW, padH, psfTmp);
+
+    const out = wienerDeconvGrayscale(rawRGBA, sw, sh, padW, padH, psfBuf, nsr);
+    ctx.putImageData(new ImageData(out, sw, sh), 0, 0);
+  }
+
+  function scheduleProcess() {
+    if (processTimer) cancelAnimationFrame(processTimer);
+    processTimer = requestAnimationFrame(function () {
+      processTimer = null;
+      processFrame();
+    });
+  }
+
+  function updateLabels() {
+    const sphereD = parseInt(document.getElementById("sphere").value, 10) / 100;
+    const cylD = parseInt(document.getElementById("cylinder").value, 10) / 100;
+    const axisDeg = parseInt(document.getElementById("axis").value, 10);
+    const distCm = parseInt(document.getElementById("distance").value, 10);
+    const pupilMm = parseInt(document.getElementById("pupil").value, 10) / 10;
+    const nsr = parseInt(document.getElementById("nsr").value, 10) / 1000;
+
+    document.getElementById("sphereVal").textContent = sphereD.toFixed(2) + " D";
+    document.getElementById("cylinderVal").textContent = cylD.toFixed(2) + " D";
+    document.getElementById("axisVal").textContent = axisDeg + "°";
+    document.getElementById("distanceVal").textContent = String(distCm);
+    document.getElementById("pupilVal").textContent = pupilMm.toFixed(1);
+    document.getElementById("nsrVal").textContent = nsr.toFixed(3);
+  }
+
+  function bindInputs() {
+    const ids = ["sphere", "cylinder", "axis", "distance", "pupil", "nsr"];
+    ids.forEach(function (id) {
+      document.getElementById(id).addEventListener("input", function () {
+        updateLabels();
+        scheduleProcess();
+      });
+    });
+  }
+
+  document.getElementById("reset").addEventListener("click", function () {
+    document.getElementById("sphere").value = "0";
+    document.getElementById("cylinder").value = "0";
+    document.getElementById("axis").value = "90";
+    document.getElementById("distance").value = "40";
+    document.getElementById("pupil").value = "35";
+    document.getElementById("nsr").value = "20";
+    updateLabels();
+    scheduleProcess();
+  });
+
+  document.getElementById("toggleRaw").addEventListener("click", function () {
+    showRaw = !showRaw;
+    document.getElementById("toggleRaw").textContent = showRaw ? "Show processed" : "Show raw chart";
+    scheduleProcess();
+  });
+
+  drawSharpChart();
+  bindInputs();
+  updateLabels();
+  scheduleProcess();
+
+  window.addEventListener("resize", function () {
+    if (layoutCanvas()) {
+      drawSharpChart();
+    }
+    updateLabels();
+    scheduleProcess();
+  });
+})();
+  </script>
+</body>
+</html>
