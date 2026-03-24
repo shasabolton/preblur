@@ -116,6 +116,27 @@
       cursor: pointer;
     }
     button:active { transform: scale(0.98); }
+    .display-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem 0.75rem;
+      margin-bottom: 0.75rem;
+    }
+    .display-row label {
+      font-size: 0.9rem;
+    }
+    select#displayMode {
+      flex: 1;
+      min-width: 12rem;
+      max-width: 100%;
+      padding: 0.45rem 0.6rem;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 0.9rem;
+    }
     .footnote {
       font-size: 0.75rem;
       color: var(--muted);
@@ -133,10 +154,25 @@
   </header>
   <main>
     <div class="chart-wrap">
-      <canvas id="chart" width="800" height="520" aria-label="Snellen-style chart"></canvas>
+      <canvas id="chart" width="800" height="520" aria-label="Eye chart or single letter"></canvas>
     </div>
     <section class="controls" aria-label="Tuning parameters">
       <h2>Parameters</h2>
+      <div class="display-row">
+        <label for="displayMode">Display</label>
+        <select id="displayMode" aria-label="Chart or single letter">
+          <option value="chart" selected>Full Snellen chart</option>
+          <option value="E">Single letter — E</option>
+          <option value="F">Single letter — F</option>
+          <option value="P">Single letter — P</option>
+          <option value="T">Single letter — T</option>
+          <option value="O">Single letter — O</option>
+          <option value="Z">Single letter — Z</option>
+          <option value="L">Single letter — L</option>
+          <option value="D">Single letter — D</option>
+          <option value="C">Single letter — C</option>
+        </select>
+      </div>
       <div class="row">
         <label for="sphere">Sphere (defocus strength, D scale)</label>
         <span class="val" id="sphereVal">0.00</span>
@@ -197,17 +233,23 @@
     "L E F O D P C T",
   ];
 
+  const displaySelect = document.getElementById("displayMode");
+
   let rawRGBA = null;
   let procW = 0;
   let procH = 0;
   let showRaw = false;
   let processTimer = null;
 
+  function isChartMode() {
+    return displaySelect.value === "chart";
+  }
+
   function layoutCanvas() {
     const wrap = canvas.parentElement;
     const cssW = Math.min(900, Math.max(280, wrap.clientWidth - 0));
     const dpr = Math.min(2.5, window.devicePixelRatio || 1);
-    const aspect = 800 / 520;
+    const aspect = isChartMode() ? 800 / 520 : 0.78;
     const w = Math.max(400, Math.round(cssW * dpr));
     const h = Math.round(w / aspect);
     canvas.style.width = cssW + "px";
@@ -226,20 +268,27 @@
     const h = canvas.height;
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, w, h);
-    const margin = w * 0.06;
-    const top = h * 0.08;
-    const rowH = (h - top - margin) / ROWS;
 
     ctx.fillStyle = "#111111";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
 
-    for (let r = 0; r < ROWS; r++) {
-      const text = ROW_TEXT[r];
-      const fontPx = rowH * 0.72 * Math.pow(0.88, r);
+    if (isChartMode()) {
+      const margin = w * 0.06;
+      const top = h * 0.08;
+      const rowH = (h - top - margin) / ROWS;
+      for (let r = 0; r < ROWS; r++) {
+        const text = ROW_TEXT[r];
+        const fontPx = rowH * 0.72 * Math.pow(0.88, r);
+        ctx.font = "bold " + fontPx + "px Arial, Helvetica, sans-serif";
+        const y = top + rowH * (r + 0.5);
+        ctx.fillText(text, w / 2, y);
+      }
+    } else {
+      const ch = displaySelect.value;
+      const fontPx = Math.min(w, h) * 0.78;
       ctx.font = "bold " + fontPx + "px Arial, Helvetica, sans-serif";
-      const y = top + rowH * (r + 0.5);
-      ctx.fillText(text, w / 2, y);
+      ctx.fillText(ch, w / 2, h / 2);
     }
 
     const id = ctx.getImageData(0, 0, w, h);
@@ -546,6 +595,11 @@
   }
 
   function bindInputs() {
+    displaySelect.addEventListener("change", function () {
+      drawSharpChart();
+      updateLabels();
+      scheduleProcess();
+    });
     const ids = ["sphere", "cylinder", "axis", "distance", "pupil", "nsr"];
     ids.forEach(function (id) {
       document.getElementById(id).addEventListener("input", function () {
@@ -578,11 +632,15 @@
   scheduleProcess();
 
   window.addEventListener("resize", function () {
-    if (layoutCanvas()) {
+    const prevW = canvas.width;
+    const prevH = canvas.height;
+    layoutCanvas();
+    if (canvas.width !== prevW || canvas.height !== prevH) {
       drawSharpChart();
+    } else {
+      scheduleProcess();
     }
     updateLabels();
-    scheduleProcess();
   });
 })();
   </script>
